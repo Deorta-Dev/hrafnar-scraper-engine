@@ -7,7 +7,7 @@ echo "========================================================"
 echo "  Instalador Universal - Hrafnar Scraper Engine"
 echo "========================================================"
 
-# Función para ocultar logs y mostrar indicador de trabajo
+# Función para indicadores visuales de progreso
 run_stage() {
     local message="$1"
     local command="$2"
@@ -36,7 +36,7 @@ run_stage() {
     fi
 }
 
-# 1. Dependencias del sistema
+# 1. Dependencias del sistema y Chromium nativo
 run_stage "-> Instalando librerías base..." "apt-get update -y && apt-get install -y xvfb xauth libgbm-dev libnss3 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxrandr2 libpangocairo-1.0-0 libxss1 libgtk-3-0 curl git chromium-browser libasound2t64"
 
 # 2. Node.js
@@ -47,15 +47,9 @@ fi
 # 3. Build del proyecto
 if [ -f "package.json" ]; then
     run_stage "-> Configurando TypeScript..." "sed -i 's/\"module\": *\"[aA][mM][dD]\"/\"module\": \"commonjs\"/g' tsconfig*.json && sed -i '/\"outFile\":/d' tsconfig*.json"
-
-    # Instalamos dependencias y nos aseguramos de que playwright esté incluido
-    run_stage "-> Instalando dependencias NPM..." "npm install && npm install playwright"
-
-    # Intentamos localizar el binario de forma dinámica en lugar de forzar la ruta
-    PLAYWRIGHT_PATH=$(find . -name playwright | grep ".bin/playwright" | head -n 1)
-
-    run_stage "-> Descargando navegadores (Playwright)..." "$PLAYWRIGHT_PATH install chromium --with-deps"
-
+    run_stage "-> Instalando dependencias NPM..." "npm install"
+    # Se omite la descarga de navegadores de Playwright debido a la incompatibilidad del OS
+    run_stage "-> Preparando entorno (omitiendo descarga binarios)..." "echo 'SKIP_DOWNLOAD=1' > /dev/null"
     run_stage "-> Compilando (Nest Build)..." "npm run build"
 fi
 
@@ -71,7 +65,9 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/hrafnar
-Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/hrafnar/ms-playwright
+# Variables para forzar el uso del Chromium del sistema
+Environment=PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+Environment=CHROME_PATH=/usr/bin/chromium-browser
 ExecStart=$(which xvfb-run) --auto-servernum --server-args="-screen 0 1280x1024x24" $(which node) /opt/hrafnar/main.js
 Restart=on-failure
 RestartSec=5
@@ -86,5 +82,6 @@ systemctl restart hrafnar.service
 
 echo "========================================================"
 echo "  Instalación finalizada."
-echo "  Servicio 'hrafnar' iniciado correctamente."
+echo "  IMPORTANTE: Asegúrate de que en tu código NestJS el"
+echo "  lanzamiento del navegador apunte a /usr/bin/chromium-browser"
 echo "========================================================"
