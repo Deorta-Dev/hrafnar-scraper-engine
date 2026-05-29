@@ -7,19 +7,14 @@ echo "========================================================"
 echo "  Instalador Universal - Hrafnar Scraper Engine"
 echo "========================================================"
 
-# Función para ocultar logs y mostrar indicador de trabajo, pero mostrar error si falla
+# Función para ocultar logs y mostrar indicador de trabajo
 run_stage() {
     local message="$1"
     local command="$2"
     printf "%s " "$message"
-
     local tmp_log=$(mktemp)
-
-    # Ejecutamos el comando y guardamos salida en log temporal
     eval "$command" > "$tmp_log" 2>&1 &
     local pid=$!
-
-    # Spinner mientras trabaja
     local spinstr='|/-\'
     while kill -0 $pid 2>/dev/null; do
         local temp=${spinstr#?}
@@ -28,15 +23,11 @@ run_stage() {
         sleep 0.1
         printf "\b\b\b"
     done
-
     wait $pid
     local exit_status=$?
-
     if [ $exit_status -ne 0 ]; then
         printf "\r%s [ERROR]    \n" "$message"
-        echo -e "\n==================== DETALLE DEL ERROR ===================="
         cat "$tmp_log"
-        echo "==========================================================="
         rm -f "$tmp_log"
         exit $exit_status
     else
@@ -48,7 +39,7 @@ run_stage() {
 # 1. Dependencias del sistema
 run_stage "-> Instalando librerías base..." "apt-get update -y && apt-get install -y xvfb xauth libgbm-dev libnss3 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxrandr2 libpangocairo-1.0-0 libxss1 libgtk-3-0 curl git chromium-browser libasound2t64"
 
-# 2. Node.js (se instala en /usr/local para que sea global al ser sudo)
+# 2. Node.js
 if ! command -v node &> /dev/null; then
     run_stage "-> Instalando Node.js..." "curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs"
 fi
@@ -57,10 +48,11 @@ fi
 if [ -f "package.json" ]; then
     run_stage "-> Configurando TypeScript..." "sed -i 's/\"module\": *\"[aA][mM][dD]\"/\"module\": \"commonjs\"/g' tsconfig*.json && sed -i '/\"outFile\":/d' tsconfig*.json"
     run_stage "-> Instalando dependencias NPM..." "npm install"
+    run_stage "-> Instalando navegadores Playwright..." "npx playwright install chromium"
     run_stage "-> Compilando (Nest Build)..." "npm run build"
 fi
 
-# 4. Despliegue a /opt/hrafnar
+# 4. Despliegue
 run_stage "-> Desplegando en /opt/hrafnar..." "rm -rf /opt/hrafnar && mkdir -p /opt/hrafnar && cp -r dist/* /opt/hrafnar/ && cp package.json /opt/hrafnar/ && cp -r node_modules /opt/hrafnar/"
 
 # 5. Servicio Systemd
@@ -72,6 +64,8 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/hrafnar
+# Aseguramos que Playwright busque los navegadores en la carpeta compartida
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/hrafnar/ms-playwright
 ExecStart=$(which xvfb-run) --auto-servernum --server-args="-screen 0 1280x1024x24" $(which node) /opt/hrafnar/main.js
 Restart=on-failure
 RestartSec=5
@@ -86,6 +80,4 @@ systemctl restart hrafnar.service
 
 echo "========================================================"
 echo "  Instalación finalizada."
-echo "  Servicio 'hrafnar' iniciado correctamente."
-echo "  Logs: journalctl -u hrafnar -f"
 echo "========================================================"
