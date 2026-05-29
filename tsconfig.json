@@ -1,14 +1,16 @@
 {
   "compilerOptions": {
-    "module": "amd",
+    "module": "commonjs",
     "moduleResolution": "node",
     "esModuleInterop": true,
+    "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
     "target": "ES2021",
-    "outFile": "./dist/main.js",
+    "sourceMap": true,
+    "outDir": "./dist", // CAMBIA outFile POR outDir
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
@@ -16,8 +18,6 @@
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": false,
     "strictBindCallApply": false,
-    "noFallthroughCasesInSwitch": false,
-    "declaration": false,
-    "sourceMap": false
+    "noFallthroughCasesInSwitch": false
   }
 }
