@@ -49,8 +49,6 @@ install_system_deps() {
         run_stage "-> Configurando librerías de sonido..." "sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2"
     elif [ -x "$(command -v dnf)" ]; then
         run_stage "-> Instalando dependencias en Fedora/RHEL (DNF)..." "sudo dnf install -y xorg-x11-server-Xvfb xauth mesa-libgbm nss at-spi2-atk libXcomposite libXdamage libXrandr alsa-lib pango libXScrnSaver gtk3 curl git chromium"
-    elif [ -x "$(command -v pacman)" ]; then
-        run_stage "-> Instalando dependencias en Arch Linux (Pacman)..." "sudo pacman -Sy --noconfirm xorg-server-xvfb xorg-xauth nss alsa-lib gtk3 libxss curl git chromium"
     else
         echo "Gestor de paquetes no soportado automáticamente para dependencias de interfaz. Instálalas manualmente."
     fi
@@ -61,24 +59,87 @@ install_node() {
 
     if ! command -v node &> /dev/null; then
         run_stage "-> Instalando Node Version Manager (NVM)..." "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"
-
-        # Cargar nvm en la sesión actual
         [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-
         run_stage "-> Descargando e instalando Node.js (LTS)..." "nvm install --lts && nvm use --lts && nvm alias default 'lts/*'"
     else
         echo "-> Node.js ya está instalado."
     fi
 
-    # Nos aseguramos que nvm esté cargado para los siguientes pasos
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 }
 
 fix_and_build_project() {
     if [ -f "package.json" ]; then
-        run_stage "-> Configurando TypeScript (Convirtiendo AMD a CommonJS)..." "sed -i 's/\"module\": *\"[aA][mM][dD]\"/\"module\": \"commonjs\"/g' tsconfig*.json && sed -i '/\"outFile\":/d' tsconfig*.json"
-
-        # Para NPM, nos aseguramos explícitamente de tener NVM cargado en el subshell
+        run_stage "-> Configurando TypeScript (AMD a CommonJS)..." "sed -i 's/\"module\": *\"[aA][mM][dD]\"/\"module\": \"commonjs\"/g' tsconfig*.json && sed -i '/\"outFile\":/d' tsconfig*.json"
         run_stage "-> Descargando dependencias de NPM (esto puede tardar)..." "source \$HOME/.nvm/nvm.sh && npm install"
+        run_stage "-> Compilando proyecto NestJS..." "source \$HOME/.nvm/nvm.sh && npm run build"
+    else
+        echo "ADVERTENCIA: No se encontró package.json. Ejecuta este script desde la raíz del proyecto."
+        exit 1
+    fi
+}
 
-        run_stage "-> Compilando proyecto NestJS..." "source \$HOME/.nvm/n
+deploy_to_opt() {
+    run_stage "-> Limpiando instalación previa..." "sudo rm -rf /opt/hrafnar"
+    run_stage "-> Creando directorio de sistema /opt/hrafnar..." "sudo mkdir -p /opt/hrafnar"
+
+    if [ -d "./dist" ]; then
+        run_stage "-> Copiando código de producción (dist)..." "sudo bash -c 'cp -r dist/* /opt/hrafnar/'"
+    else
+        echo "ERROR: La carpeta dist no se generó en el proceso de build."
+        exit 1
+    fi
+
+    run_stage "-> Configurando dependencias en producción..." "sudo cp package.json /opt/hrafnar/ && sudo cp -r node_modules /opt/hrafnar/"
+
+    CURRENT_USER=$(whoami)
+    run_stage "-> Asignando permisos finales..." "sudo chown -R $CURRENT_USER:$CURRENT_USER /opt/hrafnar"
+}
+
+setup_systemd_service() {
+    SERVICE_NAME="hrafnar"
+    SERVICE_FILE="/tmp/${SERVICE_NAME}.service"
+    CURRENT_USER=$(whoami)
+    XVFB_PATH=$(which xvfb-run)
+    NODE_PATH=$(which node)
+
+    # Creamos el archivo de servicio sin envolverlo en run_stage para evitar errores de sintaxis
+    printf "-> Generando archivo de servicio de Systemd... "
+    cat <<EOF > "$SERVICE_FILE"
+[Unit]
+Description=Hrafnar Scraper Engine con Xvfb
+After=network.target
+
+[Service]
+Type=simple
+User=$CURRENT_USER
+WorkingDirectory=/opt/hrafnar
+Environment=NODE_ENV=production
+Environment=PATH=$PATH
+ExecStart=$XVFB_PATH --auto-servernum --server-args="-screen 0 1280x1024x24" $NODE_PATH /opt/hrafnar/main.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    printf "[HECHO]\n"
+
+    run_stage "-> Registrando hrafnar.service en el sistema..." "sudo mv $SERVICE_FILE /etc/systemd/system/${SERVICE_NAME}.service && sudo systemctl daemon-reload"
+    run_stage "-> Inicializando servicio en segundo plano..." "sudo systemctl enable ${SERVICE_NAME}.service && sudo systemctl restart ${SERVICE_NAME}.service"
+}
+
+# Flujo de ejecución
+install_system_deps
+install_node
+fix_and_build_project
+deploy_to_opt
+setup_systemd_service
+
+echo "========================================================"
+echo "  ¡Instalación completada con éxito!"
+echo "========================================================"
+echo "El motor scraper se está ejecutando desde /opt/hrafnar"
+echo "Para ver los logs en tiempo real, ejecuta:"
+echo "  sudo journalctl -u hrafnar -f"
+echo "========================================================"
