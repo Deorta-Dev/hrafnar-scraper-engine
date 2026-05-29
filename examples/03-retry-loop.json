@@ -1,0 +1,87 @@
+{
+  "comment": "Retry loop: attempt a click up to 3 times, stop when success element appears",
+  "instructions": [
+    {
+      "type": "set",
+      "fields": {
+        "retryCount": 0,
+        "maxRetries": 3,
+        "success": false
+      }
+    },
+    {
+      "type": "goto",
+      "url": "https://app.example.com/dashboard",
+      "waitUntil": "domcontentloaded"
+    },
+
+    { "type": "label", "name": "retry-start" },
+
+    {
+      "type": "if",
+      "condition": {
+        "type": "scopeEvaluate",
+        "left": "$retryCount",
+        "operator": ">=",
+        "right": 3
+      },
+      "jumpTo": "give-up"
+    },
+
+    {
+      "type": "click",
+      "selector": ".load-more-btn",
+      "optional": true
+    },
+    {
+      "type": "wait",
+      "time": 1500
+    },
+
+    {
+      "type": "if",
+      "condition": {
+        "type": "elementExists",
+        "selector": ".content-loaded"
+      },
+      "jumpTo": "done"
+    },
+
+    {
+      "type": "evaluate",
+      "script": "(count) => count + 1",
+      "args": ["$retryCount"],
+      "saveAs": "retryCount"
+    },
+
+    {
+      "type": "jump",
+      "to": "retry-start"
+    },
+
+    { "type": "label", "name": "give-up" },
+    {
+      "type": "set",
+      "fields": { "result": "max_retries_reached" }
+    },
+    { "type": "jump", "to": "end" },
+
+    { "type": "label", "name": "done" },
+    {
+      "type": "set",
+      "fields": { "result": "success" }
+    },
+    {
+      "type": "evaluate",
+      "script": "() => document.querySelectorAll('.item').length",
+      "saveAs": "itemCount"
+    },
+
+    { "type": "label", "name": "end" }
+  ],
+  "project": {
+    "result": "$result",
+    "retries": "$retryCount",
+    "itemCount": "$itemCount"
+  }
+}

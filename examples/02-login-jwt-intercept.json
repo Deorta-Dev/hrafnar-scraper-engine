@@ -1,0 +1,47 @@
+{
+  "comment": "Login flow with JWT token interception via network listener",
+  "instructions": [
+    {
+      "type": "goto",
+      "url": "https://app.example.com/login",
+      "waitUntil": "networkidle"
+    },
+    {
+      "type": "fill",
+      "selector": "input[name='email']",
+      "value": "$credentials.email"
+    },
+    {
+      "type": "fill",
+      "selector": "input[name='password']",
+      "value": "$credentials.password"
+    },
+    {
+      "type": "listenAndTrigger",
+      "listen": {
+        "urlPattern": "/api/auth/login",
+        "extractKey": "data.token"
+      },
+      "trigger": {
+        "type": "click",
+        "selector": "button[type='submit']"
+      },
+      "saveAs": "authToken",
+      "timeout": 10000
+    },
+    {
+      "type": "waitForListeners",
+      "keys": ["authToken"],
+      "timeout": 15000
+    },
+    {
+      "type": "evaluate",
+      "script": "() => window.localStorage.getItem('user_id')",
+      "saveAs": "userId"
+    }
+  ],
+  "project": {
+    "token": "$authToken",
+    "userId": "$userId"
+  }
+}
