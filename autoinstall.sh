@@ -47,8 +47,14 @@ fi
 # 3. Build del proyecto
 if [ -f "package.json" ]; then
     run_stage "-> Configurando TypeScript..." "sed -i 's/\"module\": *\"[aA][mM][dD]\"/\"module\": \"commonjs\"/g' tsconfig*.json && sed -i '/\"outFile\":/d' tsconfig*.json"
+
+    # Instalación de dependencias
     run_stage "-> Instalando dependencias NPM..." "npm install"
-    run_stage "-> Instalando navegadores Playwright..." "npx playwright install chromium"
+
+    # Instalación de navegadores y dependencias de SO para Playwright
+    run_stage "-> Descargando navegadores (Playwright)..." "./node_modules/.bin/playwright install chromium --with-deps"
+
+    # Compilación
     run_stage "-> Compilando (Nest Build)..." "npm run build"
 fi
 
@@ -64,7 +70,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/hrafnar
-# Aseguramos que Playwright busque los navegadores en la carpeta compartida
+# Forzamos la ruta de navegadores para evitar problemas de permisos
 Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/hrafnar/ms-playwright
 ExecStart=$(which xvfb-run) --auto-servernum --server-args="-screen 0 1280x1024x24" $(which node) /opt/hrafnar/main.js
 Restart=on-failure
@@ -80,4 +86,6 @@ systemctl restart hrafnar.service
 
 echo "========================================================"
 echo "  Instalación finalizada."
+echo "  Servicio 'hrafnar' iniciado correctamente."
+echo "  Logs: journalctl -u hrafnar -f"
 echo "========================================================"
