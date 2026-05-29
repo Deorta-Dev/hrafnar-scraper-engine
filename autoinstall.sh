@@ -7,14 +7,17 @@ echo "========================================================"
 echo "  Instalador Universal - Hrafnar Scraper Engine"
 echo "========================================================"
 
-# Función para ocultar logs y mostrar indicador de carga (spinner)
+# Función para ocultar logs y mostrar indicador, PERO mostrar el error si falla
 run_stage() {
     local message="$1"
     local command="$2"
     printf "%s " "$message"
 
-    # Ejecuta el comando en segundo plano, silenciando stdout y stderr
-    eval "$command" > /dev/null 2>&1 &
+    # Creamos un archivo temporal para guardar los logs de este comando
+    local tmp_log=$(mktemp)
+
+    # Ejecuta el comando en segundo plano, guardando salida y errores en el archivo temporal
+    eval "$command" > "$tmp_log" 2>&1 &
     local pid=$!
 
     # Spinner animado
@@ -34,11 +37,15 @@ run_stage() {
 
     if [ $exit_status -ne 0 ]; then
         printf "\r%s [ERROR]    \n" "$message"
-        echo "--> El comando falló silenciosamente."
-        echo "--> Para debugear, ejecuta manualmente: $command"
+        echo -e "\n==================== DETALLE DEL ERROR ===================="
+        cat "$tmp_log" # <-- AQUI MOSTRAMOS EL ERROR COMPLETO
+        echo "==========================================================="
+        echo "--> Comando que falló: $command"
+        rm -f "$tmp_log"
         exit $exit_status
     else
         printf "\r%s [HECHO]    \n" "$message"
+        rm -f "$tmp_log"
     fi
 }
 
@@ -103,7 +110,7 @@ setup_systemd_service() {
     XVFB_PATH=$(which xvfb-run)
     NODE_PATH=$(which node)
 
-    # Creamos el archivo de servicio sin envolverlo en run_stage para evitar errores de sintaxis
+    # Bloque de Systemd fuera de run_stage para evitar errores de sintaxis "Unterminated quoted string"
     printf "-> Generando archivo de servicio de Systemd... "
     cat <<EOF > "$SERVICE_FILE"
 [Unit]
