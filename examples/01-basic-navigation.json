@@ -1,0 +1,34 @@
+{
+  "comment": "Basic navigation example - scrape a page title and meta description",
+  "sessionId": null,
+  "closeSession": true,
+  "instructions": [
+    {
+      "type": "goto",
+      "url": "https://betplay.com.co",
+      "waitUntil": "domcontentloaded"
+    },
+    {
+      "type": "evaluate",
+      "script": "() => document.title",
+      "saveAs": "pageTitle"
+    },
+    {
+      "type": "evaluate",
+      "script": "() => document.querySelector('meta[name=\"description\"]')?.content ?? ''",
+      "saveAs": "metaDescription"
+    },
+    {
+      "type": "evaluate",
+      "script": "() => document.querySelectorAll('p').length",
+      "saveAs": "paragraphCount"
+    }
+  ],
+  "project": {
+    "title": "$pageTitle",
+    "description": "$metaDescription",
+    "stats": {
+      "paragraphs": "$paragraphCount"
+    }
+  }
+}

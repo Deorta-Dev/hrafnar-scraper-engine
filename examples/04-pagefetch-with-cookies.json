@@ -1,0 +1,43 @@
+{
+  "comment": "Uses pageFetch to call an internal API endpoint with browser cookies/auth headers",
+  "instructions": [
+    {
+      "type": "goto",
+      "url": "https://app.example.com",
+      "waitUntil": "networkidle"
+    },
+    {
+      "type": "pageFetch",
+      "url": "https://app.example.com/api/v1/user/profile",
+      "options": {
+        "method": "GET",
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "saveAs": "profile"
+    },
+    {
+      "type": "pageFetch",
+      "url": "https://app.example.com/api/v1/notifications",
+      "saveAs": "notifications"
+    },
+    {
+      "type": "evaluate",
+      "script": "(notifications) => notifications.filter(n => !n.read).length",
+      "args": ["$notifications"],
+      "saveAs": "unreadCount"
+    }
+  ],
+  "project": {
+    "user": {
+      "id": "$profile.id",
+      "name": "$profile.name",
+      "email": "$profile.email"
+    },
+    "notifications": {
+      "total": "$notifications.length",
+      "unread": "$unreadCount"
+    }
+  }
+}
