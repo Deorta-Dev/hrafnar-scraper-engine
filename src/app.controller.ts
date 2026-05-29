@@ -59,11 +59,9 @@ export class AppController {
       const result = await this.executeService.execute(payload);
       return {
         status: 'success',
-        data: {
-          sessionId: result.sessionId,
-          project: result.project,
-          durationMs: result.durationMs,
-        },
+        sessionId: result.sessionId,
+        durationMs: result.durationMs,
+        data: result.project,
       };
     } catch (err) {
       this.logger.error(`execute failed: ${err.message}`);

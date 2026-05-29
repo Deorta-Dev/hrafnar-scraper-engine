@@ -1,4 +1,4 @@
-# 🤖 Headless Engine — Remote Scraping & Automation API
+# 🤖 Hrafnar Scraper Engine — Remote Scraping & Automation API
 
 A NestJS backend that exposes a REST API for controlling a Playwright/Chromium instance via JSON instruction sets. Send arrays of instructions, intercept network responses, control execution flow with labels and jumps, and receive structured output via a `project` template.
 

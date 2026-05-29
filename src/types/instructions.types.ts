@@ -148,6 +148,8 @@ export interface ExecutePayload {
 
 export interface ApiResponse<T = unknown> {
   status: 'success' | 'error';
+  sessionId?: string;
+  durationMs?: number;
   data?: T;
   error?: string;
   message?: string;
