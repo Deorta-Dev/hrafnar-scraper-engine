@@ -39,14 +39,26 @@ require_root() {
 }
 
 detect_ubuntu() {
-    local ver
-    ver=$(lsb_release -rs 2>/dev/null || grep -oP '(?<=DISTRIB_RELEASE=)\S+' /etc/lsb-release 2>/dev/null || echo "unknown")
-    case "$ver" in
-        24.*) ok "Ubuntu $ver detectado — soportado." ;;
-        26.*) ok "Ubuntu $ver detectado — soportado." ;;
-        *)    warn "Ubuntu $ver — no verificado, continuando igualmente." ;;
+    UBUNTU_VER=$(lsb_release -rs 2>/dev/null || grep -oP '(?<=DISTRIB_RELEASE=)\S+' /etc/lsb-release 2>/dev/null || echo "unknown")
+    case "$UBUNTU_VER" in
+        24.*) ok "Ubuntu $UBUNTU_VER detectado — soportado nativamente." ;;
+        26.*)
+            ok "Ubuntu $UBUNTU_VER detectado."
+            warn "Playwright aún no tiene soporte oficial para Ubuntu 26. Se usará compatibilidad con Ubuntu 24 (PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD workaround)."
+            # Forzar que Playwright use los binarios de ubuntu 24.04
+            export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1
+            PLAYWRIGHT_UBUNTU_COMPAT="24.04"
+            ;;
+        *)
+            warn "Ubuntu $UBUNTU_VER — no verificado, continuando igualmente."
+            PLAYWRIGHT_UBUNTU_COMPAT=""
+            ;;
     esac
 }
+
+# Variable global para compatibilidad
+UBUNTU_VER=""
+PLAYWRIGHT_UBUNTU_COMPAT=""
 
 check_dist_folder() {
     if [[ ! -d "$SOURCE_DIST" ]]; then
@@ -108,31 +120,66 @@ install_chromium_deps() {
     section "3/8  Dependencias de Chromium (librerías del sistema)"
 
     log "Instalando librerías necesarias para Chromium headful..."
-    apt-get install -y --no-install-recommends \
-        libnss3 \
-        libatk1.0-0 \
-        libatk-bridge2.0-0 \
-        libcups2 \
-        libxcomposite1 \
-        libxdamage1 \
-        libxfixes3 \
-        libxrandr2 \
-        libgbm1 \
-        libdrm2 \
-        libasound2t64 \
-        libpangocairo-1.0-0 \
-        libpango-1.0-0 \
-        libcairo2 \
-        libatspi2.0-0 \
-        libgtk-3-0 \
-        libx11-xcb1 \
-        libxcb-dri3-0 \
-        libxshmfence1 \
-        fonts-liberation \
-        libappindicator3-1 \
-        xdg-utils \
-        libvulkan1 \
+
+    # Paquetes comunes a Ubuntu 24 y 26
+    local COMMON_DEPS=(
+        libnss3
+        libatk-bridge2.0-0
+        libcups2
+        libxcomposite1
+        libxdamage1
+        libxfixes3
+        libxrandr2
+        libgbm1
+        libdrm2
+        libpangocairo-1.0-0
+        libpango-1.0-0
+        libcairo2
+        libatspi2.0-0
+        libx11-xcb1
+        libxcb-dri3-0
+        libxshmfence1
+        fonts-liberation
+        xdg-utils
+        libvulkan1
         libgles2
+    )
+
+    apt-get install -y --no-install-recommends "${COMMON_DEPS[@]}"
+
+    # libatk1.0-0 fue renombrado en Ubuntu 26 → libatk1.0-0t64
+    if apt-cache show libatk1.0-0 &>/dev/null 2>&1; then
+        apt-get install -y --no-install-recommends libatk1.0-0
+    elif apt-cache show libatk1.0-0t64 &>/dev/null 2>&1; then
+        apt-get install -y --no-install-recommends libatk1.0-0t64
+    else
+        warn "libatk1.0-0 / libatk1.0-0t64 no disponible — continuando."
+    fi
+
+    # libasound2 fue renombrado en Ubuntu 24+ → libasound2t64
+    if apt-cache show libasound2t64 &>/dev/null 2>&1; then
+        apt-get install -y --no-install-recommends libasound2t64
+    elif apt-cache show libasound2 &>/dev/null 2>&1; then
+        apt-get install -y --no-install-recommends libasound2
+    else
+        warn "libasound2/libasound2t64 no disponible — continuando."
+    fi
+
+    # libgtk-3-0 puede ser libgtk-3-0t64 en Ubuntu 26
+    if apt-cache show libgtk-3-0 &>/dev/null 2>&1; then
+        apt-get install -y --no-install-recommends libgtk-3-0
+    elif apt-cache show libgtk-3-0t64 &>/dev/null 2>&1; then
+        apt-get install -y --no-install-recommends libgtk-3-0t64
+    else
+        warn "libgtk-3-0 no disponible — continuando."
+    fi
+
+    # libappindicator3-1 puede no existir en Ubuntu 26
+    if apt-cache show libappindicator3-1 &>/dev/null 2>&1; then
+        apt-get install -y --no-install-recommends libappindicator3-1 || true
+    else
+        warn "libappindicator3-1 no disponible en esta versión — se omite (no crítico)."
+    fi
 
     ok "Librerías de Chromium instaladas."
 }
@@ -184,13 +231,61 @@ install_app_deps() {
     ok "Dependencias de producción instaladas."
 
     log "Instalando Chromium vía Playwright..."
-    # Playwright necesita la variable HOME para saber dónde guardar el navegador
-    PLAYWRIGHT_BROWSERS_PATH="/opt/playwright-browsers" \
-    HOME="/root" \
-    npx playwright install chromium
 
-    # Guardar la ruta del navegador para usarla en el servicio
-    CHROMIUM_EXECUTABLE=$(PLAYWRIGHT_BROWSERS_PATH="/opt/playwright-browsers" npx playwright show-browsers 2>/dev/null | grep -oP '/opt/playwright-browsers/\S+/chrome' | head -1 || true)
+    if [[ "$PLAYWRIGHT_UBUNTU_COMPAT" == "24.04" ]]; then
+        # ── Workaround para Ubuntu 26: engañar a Playwright con distro falsa ──
+        # Playwright usa /etc/os-release para detectar la distro. Lo reemplazamos
+        # temporalmente por uno que declare Ubuntu 24.04 durante la instalación.
+        warn "Aplicando workaround de compatibilidad Ubuntu 26 → 24 para Playwright..."
+
+        cp /etc/os-release /etc/os-release.bak
+
+        cat > /etc/os-release <<'OSEOF'
+NAME="Ubuntu"
+VERSION="24.04.2 LTS (Noble Numbat)"
+ID=ubuntu
+ID_LIKE=debian
+PRETTY_NAME="Ubuntu 24.04.2 LTS"
+VERSION_ID="24.04"
+HOME_URL="https://www.ubuntu.com/"
+SUPPORT_URL="https://help.ubuntu.com/"
+BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
+UBUNTU_CODENAME=noble
+OSEOF
+
+        # También parchamos lsb-release si existe
+        if [[ -f /etc/lsb-release ]]; then
+            cp /etc/lsb-release /etc/lsb-release.bak
+            cat > /etc/lsb-release <<'LSBEOF'
+DISTRIB_ID=Ubuntu
+DISTRIB_RELEASE=24.04
+DISTRIB_CODENAME=noble
+DISTRIB_DESCRIPTION="Ubuntu 24.04.2 LTS"
+LSBEOF
+        fi
+
+        # Instalar con el entorno modificado
+        PLAYWRIGHT_BROWSERS_PATH="/opt/playwright-browsers" \
+        PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 \
+        HOME="/root" \
+        npx playwright install chromium || {
+            # Si falla de todas formas, restaurar y abortar con mensaje claro
+            mv /etc/os-release.bak /etc/os-release
+            [[ -f /etc/lsb-release.bak ]] && mv /etc/lsb-release.bak /etc/lsb-release
+            error "Playwright no pudo instalar Chromium incluso con el workaround.\nRevisa que playwright-core ^1.60.0 esté en package.json."
+        }
+
+        # Restaurar os-release original
+        mv /etc/os-release.bak /etc/os-release
+        [[ -f /etc/lsb-release.bak ]] && mv /etc/lsb-release.bak /etc/lsb-release
+        ok "os-release restaurado al original (Ubuntu 26)."
+    else
+        # Ubuntu 24 u otra versión: instalación directa
+        PLAYWRIGHT_BROWSERS_PATH="/opt/playwright-browsers" \
+        HOME="/root" \
+        npx playwright install chromium
+    fi
 
     ok "Chromium de Playwright instalado en /opt/playwright-browsers."
 
